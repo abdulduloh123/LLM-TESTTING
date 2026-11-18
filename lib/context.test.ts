@@ -1,0 +1,35 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { trimToBudget, estimateTokens } from "./context";
+
+const msg = (role: "user" | "assistant", text: string) => ({ role, parts: [{ type: "text" as const, text }] });
+
+test("tidak memangkas bila muat", () => {
+  const list = [msg("user", "a"), msg("assistant", "b"), msg("user", "c")];
+  const r = trimToBudget(list, 10_000);
+  assert.equal(r.dropped, 0);
+  assert.equal(r.messages.length, 3);
+});
+
+test("memangkas pesan terlama dan mulai dari pesan user", () => {
+  const big = "x".repeat(3000); // ~1000 token
+  const list = [msg("user", big), msg("assistant", big), msg("user", big), msg("assistant", big), msg("user", "terakhir")];
+  const r = trimToBudget(list, 2100);
+  assert.equal(r.messages[r.messages.length - 1].parts[0].type, "text");
+  assert.equal(r.messages[0].role, "user");
+  assert.ok(r.dropped > 0);
+});
+
+test("pesan terakhir selalu dipertahankan walau melebihi budget", () => {
+  const r = trimToBudget([msg("user", "x".repeat(30000))], 100);
+  assert.equal(r.messages.length, 1);
+});
+
+test("daftar kosong", () => {
+  assert.deepEqual(trimToBudget([], 10), { messages: [], dropped: 0 });
+});
+
+test("estimateTokens konservatif", () => {
+  assert.equal(estimateTokens("abc"), 1);
+  assert.equal(estimateTokens("abcd"), 2);
+});

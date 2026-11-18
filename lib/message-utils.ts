@@ -91,3 +91,17 @@ export function forModel(list: UIMessage[]): UIMessage[] {
   }
   return out;
 }
+
+/**
+ * Pastikan setiap pesan punya id unik dan tidak kosong (id kosong/duplikat memicu bentrok primary key di DB).
+ * `make` dipakai untuk membuat id pengganti.
+ */
+export function ensureIds<T extends { id: string }>(list: T[], make: (index: number) => string): T[] {
+  const seen = new Set<string>();
+  return list.map((m, i) => {
+    let id = m.id;
+    if (!id || seen.has(id)) id = make(i);
+    seen.add(id);
+    return id === m.id ? m : { ...m, id };
+  });
+}

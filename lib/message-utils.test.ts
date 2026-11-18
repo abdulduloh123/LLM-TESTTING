@@ -59,3 +59,15 @@ test("forModel membuang reasoning dan balasan kosong", () => {
     ["text"],
   );
 });
+
+import { ensureIds } from "./message-utils";
+
+test("ensureIds mengganti id kosong dan duplikat, mempertahankan yang valid", () => {
+  const list = [{ id: "a" }, { id: "" }, { id: "a" }, { id: "b" }];
+  const out = ensureIds(list, (i) => `gen-${i}`);
+  assert.deepEqual(
+    out.map((m) => m.id),
+    ["a", "gen-1", "gen-2", "b"],
+  );
+  assert.equal(out[0], list[0]); // tidak diubah => objek sama
+});

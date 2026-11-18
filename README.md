@@ -1,36 +1,21 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# LLM Pribadi
 
-## Getting Started
+Chat dengan LLM dari penyedia mana pun (BYOK), mobile-first. Lihat PRD untuk detail.
 
-First, run the development server:
+## Menjalankan
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. Buat project gratis di [Neon](https://neon.tech), salin connection string ke `DATABASE_URL` di `.env.local`.
+   (`ENCRYPTION_KEY` dan `SESSION_SECRET` sudah diisi acak.)
+2. Buat tabel: `npx drizzle-kit push`
+3. Jalankan: `npm run dev`, buka http://localhost:3000, buat password, tambah provider.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Deploy ke Vercel
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Isi tiga environment variable yang sama (`DATABASE_URL`, `ENCRYPTION_KEY`, `SESSION_SECRET`) di Vercel.
+Gunakan nilai `ENCRYPTION_KEY` yang sama bila ingin memakai database yang sama, atau key akan tak terbaca.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Status
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+P0 selesai: auth password, provider + key terenkripsi (AES-256-GCM), daftar model, chat streaming,
+ganti model di tengah percakapan, riwayat (rename/hapus/pin), pencarian dasar.
+Belum: persona, pengaturan (tema/temperature), ekspor, PWA (P1).

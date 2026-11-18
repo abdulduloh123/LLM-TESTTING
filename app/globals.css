@@ -12,7 +12,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --background: #0b0b0e;
     --foreground: #ececf1;
     --muted: #18181c;
@@ -22,6 +22,22 @@
     --accent-fg: #0b0b0e;
     --user-bubble: #1e1f3a;
   }
+}
+
+:root[data-theme="dark"] {
+  --background: #0b0b0e;
+  --foreground: #ececf1;
+  --muted: #18181c;
+  --muted-fg: #a1a1aa;
+  --border: #27272d;
+  --accent: #818cf8;
+  --accent-fg: #0b0b0e;
+  --user-bubble: #1e1f3a;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
 }
 
 @theme inline {
@@ -127,4 +143,72 @@ select {
   border-left: 3px solid var(--border);
   padding-left: 0.75rem;
   color: var(--muted-fg);
+}
+
+/* Sorotan sintaks (rehype-highlight) mengikuti tema lewat variabel CSS */
+.prose-chat {
+  --hl-keyword: #7c3aed;
+  --hl-string: #0f766e;
+  --hl-number: #b45309;
+  --hl-comment: #71717a;
+  --hl-title: #1d4ed8;
+}
+:root[data-theme="dark"] .prose-chat {
+  --hl-keyword: #c4b5fd;
+  --hl-string: #5eead4;
+  --hl-number: #fbbf24;
+  --hl-comment: #8b8b96;
+  --hl-title: #93c5fd;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .prose-chat {
+    --hl-keyword: #c4b5fd;
+    --hl-string: #5eead4;
+    --hl-number: #fbbf24;
+    --hl-comment: #8b8b96;
+    --hl-title: #93c5fd;
+  }
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-built_in,
+.hljs-doctag {
+  color: var(--hl-keyword);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-attr,
+.hljs-attribute {
+  color: var(--hl-string);
+}
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-variable,
+.hljs-template-variable {
+  color: var(--hl-number);
+}
+.hljs-comment,
+.hljs-quote,
+.hljs-meta {
+  color: var(--hl-comment);
+  font-style: italic;
+}
+.hljs-title,
+.hljs-section,
+.hljs-name,
+.hljs-type,
+.hljs-class .hljs-title {
+  color: var(--hl-title);
+}
+.hljs-deletion {
+  color: #dc2626;
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 700;
 }

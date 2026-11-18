@@ -7,13 +7,19 @@ export default function LoginPage() {
   const router = useRouter();
   const [setup, setSetup] = useState<boolean | null>(null);
   const [password, setPassword] = useState("");
+  const [needsToken, setNeedsToken] = useState(false);
+  const [setupToken, setSetupToken] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth")
       .then((r) => r.json())
-      .then((d) => (d.authed ? router.replace("/") : setSetup(d.setup)))
+      .then((d) => {
+        if (d.authed) return router.replace("/");
+        setNeedsToken(!!d.needsSetupToken);
+        setSetup(d.setup);
+      })
       .catch(() => setError("Tidak bisa menghubungi server. Periksa DATABASE_URL."));
   }, [router]);
 
@@ -24,7 +30,7 @@ export default function LoginPage() {
     const r = await fetch("/api/auth", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: setup ? "login" : "setup", password }),
+      body: JSON.stringify({ action: setup ? "login" : "setup", password, ...(needsToken && !setup ? { setupToken } : {}) }),
     });
     setBusy(false);
     if (r.ok) router.replace("/");
@@ -50,6 +56,16 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             autoFocus
           />
+          {needsToken && !setup && (
+            <input
+              className="field"
+              type="password"
+              autoComplete="off"
+              placeholder="Kode setup (SETUP_TOKEN)"
+              value={setupToken}
+              onChange={(e) => setSetupToken(e.target.value)}
+            />
+          )}
           {error && <p role="alert" className="text-red-500">{error}</p>}
           <button className="btn btn-primary" disabled={busy || !password}>
             {busy ? "Memproses…" : setup ? "Masuk" : "Buat password"}

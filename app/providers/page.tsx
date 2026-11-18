@@ -21,7 +21,7 @@ const PRESETS: [string, string][] = [
 async function j<T = unknown>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, { ...init, headers: { "content-type": "application/json", ...init?.headers } });
   if (r.status === 401) {
-    window.location.assign("/login");
+    window.location.href = "/login";
   }
   return r.json();
 }
@@ -114,7 +114,7 @@ export default function ProvidersPage() {
           className="btn"
           onClick={async () => {
             await j("/api/auth", { method: "POST", body: JSON.stringify({ action: "logout" }) });
-            window.location.assign("/login");
+            window.location.href = "/login";
           }}
         >
           Keluar

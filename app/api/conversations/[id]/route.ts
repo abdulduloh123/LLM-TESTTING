@@ -1,6 +1,7 @@
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { db, conversations, messages } from "@/lib/db";
+import { db, conversations } from "@/lib/db";
+import { loadMessages } from "@/lib/messages";
 import { guard } from "@/lib/session";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -13,16 +14,7 @@ export async function GET(_: Request, { params }: Ctx) {
   if (!uuid.safeParse(id).success) return Response.json({ error: "Tidak ditemukan" }, { status: 404 });
   const [c] = await db().select().from(conversations).where(eq(conversations.id, id));
   if (!c) return Response.json({ error: "Tidak ditemukan" }, { status: 404 });
-  const rows = await db().select().from(messages).where(eq(messages.conversationId, id)).orderBy(asc(messages.position));
-  return Response.json({
-    ...c,
-    messages: rows.map((m) => ({
-      id: m.id,
-      role: m.role,
-      parts: m.parts,
-      metadata: { model: m.model },
-    })),
-  });
+  return Response.json({ ...c, messages: await loadMessages(id) });
 }
 
 const patch = z.object({

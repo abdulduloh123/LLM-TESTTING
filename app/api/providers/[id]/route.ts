@@ -1,15 +1,18 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { db, providers, models } from "@/lib/db";
 import { guard } from "@/lib/session";
 import { decrypt } from "@/lib/crypto";
 import { fetchModels, friendlyError, type Kind } from "@/lib/providers";
 
 type Ctx = { params: Promise<{ id: string }> };
+const uuid = z.string().uuid();
 
 export async function DELETE(_: Request, { params }: Ctx) {
   const denied = await guard();
   if (denied) return denied;
   const { id } = await params;
+  if (!uuid.safeParse(id).success) return Response.json({ error: "Tidak valid" }, { status: 400 });
   await db().delete(providers).where(eq(providers.id, id));
   return Response.json({ ok: true });
 }
@@ -19,6 +22,7 @@ export async function POST(_: Request, { params }: Ctx) {
   const denied = await guard();
   if (denied) return denied;
   const { id } = await params;
+  if (!uuid.safeParse(id).success) return Response.json({ error: "Tidak valid" }, { status: 400 });
   const [p] = await db().select().from(providers).where(eq(providers.id, id));
   if (!p) return Response.json({ error: "Provider tidak ditemukan" }, { status: 404 });
   try {
@@ -33,7 +37,7 @@ export async function POST(_: Request, { params }: Ctx) {
     await db().update(providers).set({ status: "ok" }).where(eq(providers.id, id));
     return Response.json({ ok: true, added: fresh.length });
   } catch (e) {
-    await db().update(providers).set({ status: "error" }).where(and(eq(providers.id, id)));
+    await db().update(providers).set({ status: "error" }).where(eq(providers.id, id));
     return Response.json({ ok: false, error: friendlyError(e) }, { status: 200 });
   }
 }

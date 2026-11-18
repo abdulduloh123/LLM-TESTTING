@@ -1,14 +1,16 @@
 import { and, asc, eq, notInArray, sql } from "drizzle-orm";
 import type { UIMessage } from "ai";
 import { db, messages } from "./db";
-import { packParts, textOf, unpack, type MsgMeta } from "./message-utils";
+import { ensureIds, packParts, textOf, unpack, type MsgMeta } from "./message-utils";
 
 export async function loadMessages(convId: string): Promise<UIMessage[]> {
   const rows = await db().select().from(messages).where(eq(messages.conversationId, convId)).orderBy(asc(messages.position));
-  return rows.map((r) => {
+  const list = rows.map((r) => {
     const u = unpack(r.parts, r.model);
     return { id: r.id, role: r.role as UIMessage["role"], parts: u.parts, metadata: u.metadata } as UIMessage;
   });
+  // Data lama bisa berisi id kosong; beri id sementara yang stabil (baris diperbaiki saat disimpan berikutnya).
+  return ensureIds(list, (i) => `${convId}-${i}`);
 }
 
 /**
@@ -17,7 +19,10 @@ export async function loadMessages(convId: string): Promise<UIMessage[]> {
  * dan keduanya dijalankan dalam satu batch (transaksi) sehingga riwayat tidak bisa setengah hilang.
  */
 export async function saveMessages(convId: string, list: UIMessage[], fallbackModel: string) {
-  const clean = list.filter((m) => m.role !== "system" && (m.role === "user" || m.parts.length > 0));
+  const clean = ensureIds(
+    list.filter((m) => m.role !== "system" && (m.role === "user" || m.parts.length > 0)),
+    () => crypto.randomUUID(),
+  );
   const rows = clean.map((m, i) => ({
     id: m.id,
     conversationId: convId,

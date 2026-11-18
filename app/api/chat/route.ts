@@ -29,7 +29,8 @@ const bodySchema = z.object({
   id: z.string().uuid(), // id percakapan
   providerId: z.string().uuid(),
   modelId: z.string().min(1),
-  history: z.array(z.string().max(100)).max(5000).optional(),
+  historyCount: z.number().int().min(0).max(5000).optional(), // jumlah pesan sebelum pesan terbaru
+  history: z.array(z.string().max(100)).max(5000).optional(), // klien lama: id; hanya jumlahnya yang dipakai
   message: z.object({ id: z.string().min(1).max(100), role: z.enum(["user", "assistant"]), parts: z.array(z.any()) }).optional(),
   // bentuk lama (klien lama yang masih ter-cache): seluruh riwayat dikirim
   messages: z.array(z.any()).min(1).optional(),
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success || (!parsed.data.message && !parsed.data.messages))
     return Response.json({ error: "Permintaan tidak valid" }, { status: 400 });
-  const { id, providerId, modelId, history, message } = parsed.data;
+  const { id, providerId, modelId, historyCount, history, message } = parsed.data;
 
   const [[p], [conv], prefs, stored] = await Promise.all([
     db().select().from(providers).where(eq(providers.id, providerId)),
@@ -72,13 +73,13 @@ export async function POST(req: Request) {
   // Susun riwayat lengkap.
   let incoming: UIMessage[];
   if (message) {
+    // Riwayat = N pesan pertama di database (urut posisi). Tidak bergantung pada id dari klien,
+    // sehingga id yang berbeda antara klien dan server tidak lagi membuat riwayat "tidak sinkron".
+    const n = historyCount ?? history?.length ?? 0;
+    if (stored.length < n)
+      return Response.json({ error: "Riwayat tidak sinkron. Buka ulang percakapan lalu coba lagi." }, { status: 409 });
+    const prior = stored.slice(0, n);
     const byId = new Map(stored.map((m) => [m.id, m]));
-    const prior: UIMessage[] = [];
-    for (const hid of history ?? []) {
-      const m = byId.get(hid);
-      if (!m) return Response.json({ error: "Riwayat tidak sinkron. Buka ulang percakapan lalu coba lagi." }, { status: 409 });
-      prior.push(m);
-    }
     const last: UIMessage =
       message.role === "user"
         ? { id: message.id, role: "user", parts: sanitizeUserParts(message.parts) }
@@ -141,6 +142,8 @@ export async function POST(req: Request) {
     stream: toUIMessageStream({
       stream: result.stream,
       originalMessages: incoming,
+      // Wajib: tanpa ini balasan asisten tersimpan dengan id kosong dan bentrok di database.
+      generateMessageId: () => crypto.randomUUID(),
       messageMetadata: ({ part }): MsgMeta | undefined => {
         if (part.type === "start") return { model: modelId };
         if (part.type === "finish")

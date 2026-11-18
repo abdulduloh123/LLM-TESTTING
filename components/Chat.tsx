@@ -19,7 +19,7 @@ type PrefsLite = { theme: "system" | "light" | "dark"; personas: PersonaOpt[]; a
 const transport = new DefaultChatTransport({
   api: "/api/chat",
   prepareSendMessagesRequest: ({ messages, body }) => ({
-    body: { ...body, history: messages.slice(0, -1).map((m) => m.id), message: messages[messages.length - 1] },
+    body: { ...body, historyCount: messages.length - 1, message: messages[messages.length - 1] },
   }),
 });
 

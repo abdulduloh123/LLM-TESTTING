@@ -5,7 +5,7 @@ import type { UIMessage } from "ai";
 import Markdown from "../Markdown";
 import { ATTACH_MARK } from "./attachments";
 
-type Meta = { model?: string | null; usage?: { in?: number; out?: number }; imageDescription?: string };
+type Meta = { model?: string | null; usage?: { in?: number; out?: number }; imageDescription?: string; imagePrompt?: string };
 
 export function textOf(m: UIMessage) {
   return m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
@@ -97,15 +97,30 @@ function MessageViewImpl({ m, isLast, busy, editing, setEditing, submitEdit, onR
     .join("\n\n")
     .trim();
 
+  const images = m.parts.flatMap((p) => (p.type === "file" && p.mediaType.startsWith("image/") ? [p] : []));
+
   return (
     <div className="flex flex-col gap-1">
+      {images.length > 0 && (
+        <div className={`grid gap-2 ${images.length > 1 ? "grid-cols-2" : ""}`}>
+          {images.map((p, i) => (
+            <figure key={i} className="flex flex-col gap-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={p.url} alt={meta?.imagePrompt ?? "gambar"} className="w-full rounded-2xl border border-border object-contain" />
+              <a href={p.url} download={`desain-${i + 1}.jpg`} className="min-h-9 self-start px-2 text-sm text-muted-fg underline">
+                Simpan gambar
+              </a>
+            </figure>
+          ))}
+        </div>
+      )}
       {reasoning && (
         <details className="rounded-xl border border-border px-3 py-2 text-sm text-muted-fg">
           <summary className="cursor-pointer">Proses berpikir</summary>
           <p className="mt-2 whitespace-pre-wrap break-words">{reasoning}</p>
         </details>
       )}
-      {text ? <Markdown text={text} /> : !reasoning && <span className="text-muted-fg">…</span>}
+      {text ? <Markdown text={text} /> : !reasoning && images.length === 0 && <span className="text-muted-fg">…</span>}
       <div className="flex flex-wrap items-center gap-1 text-sm text-muted-fg">
         {model && <span className="mr-2 max-w-[50%] truncate">{model}</span>}
         {usage && (usage.in !== undefined || usage.out !== undefined) && (

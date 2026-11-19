@@ -9,6 +9,9 @@ export type MsgMeta = {
   usage?: Usage;
   /** Deskripsi gambar hasil model penglihatan (pada pesan pengguna yang berisi gambar). */
   imageDescription?: string;
+  /** Pada balasan asisten yang berisi gambar buatan: prompt dan model yang membuatnya. */
+  imagePrompt?: string;
+  imageModel?: string;
 };
 
 export const LIMITS = {
@@ -60,12 +63,18 @@ export function sanitizeUserParts(parts: unknown): UIMessage["parts"] {
   return out as UIMessage["parts"];
 }
 
-/** Susun `parts` untuk disimpan: bagian pesan + satu bagian meta (token / deskripsi gambar) bila ada. */
+type StoredMeta = { usage?: Usage; imageDescription?: string; imagePrompt?: string; imageModel?: string };
+
+/** Susun `parts` untuk disimpan: bagian pesan + satu bagian meta (token, deskripsi/prompt gambar) bila ada. */
 export function packParts(m: UIMessage): unknown[] {
   const parts = m.parts.filter((p) => p.type !== META_TYPE);
   const meta = m.metadata as MsgMeta | undefined;
-  const data: { usage?: Usage; imageDescription?: string } = {};
-  if (m.role === "assistant" && meta?.usage && (meta.usage.in !== undefined || meta.usage.out !== undefined)) data.usage = meta.usage;
+  const data: StoredMeta = {};
+  if (m.role === "assistant") {
+    if (meta?.usage && (meta.usage.in !== undefined || meta.usage.out !== undefined)) data.usage = meta.usage;
+    if (meta?.imagePrompt) data.imagePrompt = meta.imagePrompt;
+    if (meta?.imageModel) data.imageModel = meta.imageModel;
+  }
   if (m.role === "user" && meta?.imageDescription) data.imageDescription = meta.imageDescription;
   return Object.keys(data).length ? [...parts, { type: META_TYPE, data }] : parts;
 }
@@ -73,13 +82,16 @@ export function packParts(m: UIMessage): unknown[] {
 /** Kebalikan packParts: pisahkan bagian meta menjadi `metadata`. */
 export function unpack(parts: unknown, model: string | null): { parts: UIMessage["parts"]; metadata: MsgMeta } {
   const all = (Array.isArray(parts) ? parts : []) as AnyPart[];
-  const meta = all.find((p) => p.type === META_TYPE) as { data?: { usage?: Usage; imageDescription?: string } } | undefined;
+  const meta = all.find((p) => p.type === META_TYPE) as { data?: StoredMeta } | undefined;
+  const d = meta?.data;
   return {
     parts: all.filter((p) => p.type !== META_TYPE) as UIMessage["parts"],
     metadata: {
       model,
-      ...(meta?.data?.usage ? { usage: meta.data.usage } : {}),
-      ...(meta?.data?.imageDescription ? { imageDescription: meta.data.imageDescription } : {}),
+      ...(d?.usage ? { usage: d.usage } : {}),
+      ...(d?.imageDescription ? { imageDescription: d.imageDescription } : {}),
+      ...(d?.imagePrompt ? { imagePrompt: d.imagePrompt } : {}),
+      ...(d?.imageModel ? { imageModel: d.imageModel } : {}),
     },
   };
 }
@@ -95,7 +107,7 @@ export function withImageDescriptions(list: UIMessage[], active: boolean): UIMes
   return list.map((m) => {
     if (m.role !== "user" || !m.parts.some(isImagePart)) return m;
     const desc = (m.metadata as MsgMeta | undefined)?.imageDescription;
-    const note = desc ? `[Lampiran gambar — dibaca oleh model penglihatan]\n${desc}` : "[Lampiran gambar lama tidak disertakan]";
+    const note = desc ? `[Lampiran gambar — dibaca oleh model penglihatan]\n${desc}` : "[Lampiran gambar tidak disertakan]";
     return { ...m, parts: [{ type: "text", text: note } as UIMessage["parts"][number], ...m.parts.filter((p) => !isImagePart(p))] };
   });
 }
@@ -109,7 +121,18 @@ export function forModel(list: UIMessage[]): UIMessage[] {
   const out: UIMessage[] = [];
   for (const m of list) {
     if (m.role === "system") continue;
-    const parts = m.parts.filter((p) => p.type === "text" || p.type === "file");
+    let parts: UIMessage["parts"] = m.parts.filter((p) => p.type === "text" || p.type === "file");
+    if (m.role === "assistant") {
+      // Gambar buatan tidak dikirim balik ke model teks; cukup catatan singkat tentang gambarnya.
+      const meta = m.metadata as MsgMeta | undefined;
+      const hadImages = parts.some((p) => p.type === "file");
+      parts = parts.filter((p) => p.type === "text");
+      if (hadImages)
+        parts = [
+          { type: "text", text: `[Gambar dibuat oleh model gambar${meta?.imagePrompt ? ` dari prompt: ${meta.imagePrompt}` : ""}]` } as UIMessage["parts"][number],
+          ...parts,
+        ];
+    }
     const hasContent = parts.some((p) => (p.type === "text" ? p.text.trim() !== "" : true));
     if (!hasContent) continue;
     out.push({ ...m, parts });

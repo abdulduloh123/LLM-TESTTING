@@ -18,6 +18,7 @@ import { activeSystem } from "@/lib/prefs-schema";
 import { loadMessages, saveMessages } from "@/lib/messages";
 import { forModel, isImagePart, sanitizeUserParts, textOf, withImageDescriptions, type MsgMeta } from "@/lib/message-utils";
 import { describeImages } from "@/lib/vision";
+import { generateImages, ImageGenError, parseDataUrl, type Img } from "@/lib/imagegen";
 import { trimToBudget } from "@/lib/context";
 
 export const maxDuration = 300;
@@ -33,9 +34,38 @@ const bodySchema = z.object({
   historyCount: z.number().int().min(0).max(5000).optional(), // jumlah pesan sebelum pesan terbaru
   history: z.array(z.string().max(100)).max(5000).optional(), // klien lama: id; hanya jumlahnya yang dipakai
   message: z.object({ id: z.string().min(1).max(100), role: z.enum(["user", "assistant"]), parts: z.array(z.any()) }).optional(),
+  // Mode pembuat gambar: Gemini membuat/mengedit gambar, model terpilih menulis balasan teksnya.
+  image: z
+    .object({
+      mode: z.enum(["new", "edit"]),
+      aspectRatio: z.enum(["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]).optional(),
+      count: z.number().int().min(1).max(4),
+    })
+    .optional(),
   // bentuk lama (klien lama yang masih ter-cache): seluruh riwayat dikirim
   messages: z.array(z.any()).min(1).optional(),
 });
+
+/** Sisipkan gambar buatan ke aliran balasan (setelah "start") agar ikut tersimpan sebagai bagian pesan asisten. */
+function injectFiles<T extends { type: string }>(stream: ReadableStream<T>, files: Img[]): ReadableStream<T> {
+  let done = false;
+  return stream.pipeThrough(
+    new TransformStream<T, T>({
+      transform(part, controller) {
+        controller.enqueue(part);
+        if (!done && part.type === "start") {
+          done = true;
+          for (const f of files) controller.enqueue({ type: "file", file: { mediaType: f.mediaType, base64: f.base64 } } as unknown as T);
+        }
+      },
+    }),
+  );
+}
+
+const IMAGE_HINT = (n: number) =>
+  `Pengguna sedang memakai fitur pembuat gambar. ${n} gambar sudah dibuat oleh model gambar dari permintaan pengguna dan sudah tampil di chat; ` +
+  "kamu tidak perlu dan tidak bisa membuat gambar sendiri, jadi jangan menolak atau berkata tidak bisa membuat gambar. " +
+  "Balas singkat dalam bahasa pengguna: jelaskan ringkas apa yang dimaksud pada desain, lalu beri 2-3 ide variasi atau cara memperjelas deskripsinya.";
 
 async function makeTitle(model: ReturnType<typeof makeModel>, user: string, assistant: string): Promise<string | null> {
   try {
@@ -60,7 +90,7 @@ export async function POST(req: Request) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success || (!parsed.data.message && !parsed.data.messages))
     return Response.json({ error: "Permintaan tidak valid" }, { status: 400 });
-  const { id, providerId, modelId, historyCount, history, message } = parsed.data;
+  const { id, providerId, modelId, historyCount, history, message, image: imageReq } = parsed.data;
 
   const [[p], [conv], prefs, stored] = await Promise.all([
     db().select().from(providers).where(eq(providers.id, providerId)),
@@ -125,9 +155,46 @@ export async function POST(req: Request) {
 
   const model = makeModel({ kind: p.kind as Kind, name: p.name, baseUrl: p.baseUrl, apiKey: decrypt(p.keyEnc) }, modelId);
 
+  // Mode pembuat gambar (Gemini). Gagal di sini = tidak ada balasan; pesan pengguna sudah tersimpan.
+  let generated: Img[] = [];
+  let imageMeta: MsgMeta = {};
+  if (imageReq) {
+    const im = prefs.imageModel;
+    if (!im) return Response.json({ error: "Atur model pembuat gambar di Pengaturan terlebih dahulu." }, { status: 400 });
+    const [ip] = await db().select().from(providers).where(eq(providers.id, im.providerId));
+    if (!ip || ip.kind !== "google")
+      return Response.json({ error: "Model pembuat gambar harus dari provider Google Gemini. Periksa Pengaturan." }, { status: 400 });
+    const lastMsg = incoming[incoming.length - 1];
+    const prompt = textOf(lastMsg).trim();
+    if (!prompt) return Response.json({ error: "Tulis deskripsi gambar yang diinginkan." }, { status: 400 });
+
+    // Gambar acuan: lampiran pada pesan ini; bila tidak ada dan mode "edit", gambar buatan terakhir.
+    let refs = lastMsg.parts.flatMap((p) => (p.type === "file" ? [parseDataUrl(p.url)] : [])).filter((r): r is Img => !!r);
+    if (!refs.length && imageReq.mode === "edit") {
+      const prevAsst = [...incoming.slice(0, -1)].reverse().find((m) => m.role === "assistant" && m.parts.some((q) => q.type === "file"));
+      const img = prevAsst?.parts.flatMap((q) => (q.type === "file" ? [parseDataUrl(q.url)] : [])).find((r) => r);
+      if (img) refs = [img];
+    }
+    try {
+      generated = await generateImages({
+        apiKey: decrypt(ip.keyEnc),
+        model: im.modelId,
+        prompt,
+        refs,
+        aspectRatio: imageReq.aspectRatio,
+        count: imageReq.count,
+        signal: req.signal,
+      });
+    } catch (e) {
+      const msg = e instanceof ImageGenError ? e.message : "Gagal membuat gambar. Coba lagi.";
+      return Response.json({ error: msg }, { status: 502 });
+    }
+    imageMeta = { imagePrompt: prompt.slice(0, 500), imageModel: im.modelId };
+  }
+
   let sendList = incoming;
   let visionActive = false;
-  if (useVision && vision && hasImages) {
+  if (useVision && vision && hasImages && !imageReq) {
     const [vp] = await db().select().from(providers).where(eq(providers.id, vision.providerId));
     if (vp) {
       visionActive = true;
@@ -141,14 +208,14 @@ export async function POST(req: Request) {
   }
   if (visionError)
     return Response.json({ error: `Model pembaca gambar gagal: ${visionError} Periksa model pembaca gambar di Pengaturan.` }, { status: 502 });
-  sendList = withImageDescriptions(incoming, visionActive);
+  sendList = withImageDescriptions(incoming, visionActive || !!imageReq);
 
   // Pangkas riwayat lama agar tidak melewati batas konteks.
   const { messages: forSend } = trimToBudget(forModel(sendList), prefs.contextTokens);
 
   const result = streamText({
     model,
-    instructions: activeSystem(prefs),
+    instructions: [activeSystem(prefs), imageReq ? IMAGE_HINT(generated.length) : undefined].filter(Boolean).join("\n\n") || undefined,
     messages: await convertToModelMessages(forSend),
     temperature: prefs.temperature ?? undefined,
     maxOutputTokens: prefs.maxTokens ?? undefined,
@@ -176,14 +243,14 @@ export async function POST(req: Request) {
 
   return createUIMessageStreamResponse({
     stream: toUIMessageStream({
-      stream: result.stream,
+      stream: generated.length ? injectFiles(result.stream, generated) : result.stream,
       originalMessages: incoming,
       // Wajib: tanpa ini balasan asisten tersimpan dengan id kosong dan bentrok di database.
       generateMessageId: () => crypto.randomUUID(),
       messageMetadata: ({ part }): MsgMeta | undefined => {
-        if (part.type === "start") return { model: modelId };
+        if (part.type === "start") return { model: modelId, ...imageMeta };
         if (part.type === "finish")
-          return { model: modelId, usage: { in: part.totalUsage.inputTokens, out: part.totalUsage.outputTokens } };
+          return { model: modelId, ...imageMeta, usage: { in: part.totalUsage.inputTokens, out: part.totalUsage.outputTokens } };
       },
       onError: (e) => friendlyError(e),
       onEnd: async ({ messages: all, outcome }) => {

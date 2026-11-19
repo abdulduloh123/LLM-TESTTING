@@ -22,6 +22,8 @@ const shape = {
   autoTitle: z.boolean(),
   /** Model yang bertugas "membaca" gambar. null = gambar dikirim langsung ke model yang dipilih. */
   visionModel: visionModelSchema.nullable(),
+  /** Model Gemini yang membuat/mengedit gambar. null = fitur gambar nonaktif. */
+  imageModel: visionModelSchema.nullable(),
 };
 
 export const prefsSchema = z.object(shape);
@@ -39,6 +41,7 @@ export const DEFAULT_PREFS: Prefs = {
   contextTokens: 100_000,
   autoTitle: true,
   visionModel: null,
+  imageModel: null,
 };
 
 /** Pastikan persona aktif memang ada. */

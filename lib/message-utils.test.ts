@@ -97,3 +97,26 @@ test("packParts menyimpan imageDescription pada pesan pengguna", () => {
   const u = unpack(packParts(m), null);
   assert.equal(u.metadata.imageDescription, "d");
 });
+
+test("forModel: gambar buatan asisten diganti catatan teks, bukan dikirim ke model", () => {
+  const list = [
+    { id: "1", role: "user", parts: [{ type: "text", text: "buat gaun" }] },
+    {
+      id: "2",
+      role: "assistant",
+      parts: [{ type: "file", mediaType: "image/jpeg", url: "data:image/jpeg;base64,AA" }],
+      metadata: { imagePrompt: "gaun merah" },
+    },
+  ] as UIMessage[];
+  const out = forModel(list);
+  assert.equal(out.length, 2);
+  assert.deepEqual(out[1].parts.map((p) => p.type), ["text"]);
+  assert.match((out[1].parts[0] as { text: string }).text, /gaun merah/);
+});
+
+test("packParts menyimpan imagePrompt/imageModel pada balasan asisten", () => {
+  const m = { id: "1", role: "assistant", parts: [{ type: "text", text: "x" }], metadata: { imagePrompt: "p", imageModel: "gemini-x" } } as UIMessage;
+  const u = unpack(packParts(m), "m");
+  assert.equal(u.metadata.imagePrompt, "p");
+  assert.equal(u.metadata.imageModel, "gemini-x");
+});

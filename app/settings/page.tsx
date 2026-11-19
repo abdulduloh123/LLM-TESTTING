@@ -200,6 +200,29 @@ export default function SettingsPage() {
       </section>
 
       <section className="flex flex-col gap-3">
+        <h2 className="font-semibold">Pembuat gambar</h2>
+        <p className="text-sm text-muted-fg">
+          Pilih model gambar Gemini (misalnya yang namanya mengandung &quot;image&quot;). Nyalakan tombol 🎨 di chat untuk membuat atau mengedit gambar; model yang
+          kamu pilih di chat tetap menulis balasan teksnya. Filter keamanan Google tetap berlaku, dan tiap gambar dikenai biaya.
+        </p>
+        <select
+          className="field"
+          value={p.imageModel ? `${p.imageModel.providerId}|${p.imageModel.modelId}` : ""}
+          onChange={(e) => {
+            const [providerId, ...rest] = e.target.value.split("|");
+            set("imageModel", e.target.value ? { providerId, modelId: rest.join("|") } : null);
+          }}
+        >
+          <option value="">Nonaktif</option>
+          {(models.some((m) => /image/i.test(m.modelId)) ? models.filter((m) => /image/i.test(m.modelId)) : models).map((m) => (
+            <option key={m.id} value={`${m.providerId}|${m.modelId}`}>
+              {m.providerName} — {m.label}
+            </option>
+          ))}
+        </select>
+      </section>
+
+      <section className="flex flex-col gap-3">
         <h2 className="font-semibold">Data</h2>
         <a className="btn" href="/api/export" download>
           Ekspor semua percakapan (JSON)

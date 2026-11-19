@@ -34,13 +34,21 @@ export async function saveMessages(convId: string, list: UIMessage[], fallbackMo
   }));
 
   const existing = await db()
-    .select({ id: messages.id, position: messages.position, role: messages.role, text: messages.text, model: messages.model })
+    .select({
+      id: messages.id,
+      position: messages.position,
+      role: messages.role,
+      text: messages.text,
+      model: messages.model,
+      hasMeta: sql<boolean>`${messages.parts} @> '[{"type":"data-meta"}]'::jsonb`,
+    })
     .from(messages)
     .where(eq(messages.conversationId, convId));
   const prev = new Map(existing.map((e) => [e.id, e]));
   const changed = rows.filter((r) => {
     const e = prev.get(r.id);
-    return !e || e.position !== r.position || e.role !== r.role || e.text !== r.text || e.model !== r.model;
+    const hasMeta = r.parts.some((p) => (p as { type?: string }).type === "data-meta");
+    return !e || e.position !== r.position || e.role !== r.role || e.text !== r.text || e.model !== r.model || e.hasMeta !== hasMeta;
   });
   const keep = new Set(rows.map((r) => r.id));
   const hasStale = existing.some((e) => !keep.has(e.id));

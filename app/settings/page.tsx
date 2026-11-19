@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Persona, Prefs } from "@/lib/prefs-schema";
 
+type ModelOpt = { id: string; providerId: string; providerName: string; modelId: string; label: string };
+
 const THEME_KEY = "llm-pribadi:theme";
 
 function applyTheme(t: Prefs["theme"]) {
@@ -30,9 +32,11 @@ export default function SettingsPage() {
   const [p, setP] = useState<Prefs | null>(null);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [models, setModels] = useState<ModelOpt[]>([]);
 
   useEffect(() => {
     j<Prefs>("/api/settings").then(setP);
+    j<ModelOpt[]>("/api/models").then((m) => Array.isArray(m) && setModels(m));
   }, []);
 
   if (!p)
@@ -170,6 +174,29 @@ export default function SettingsPage() {
           />
           <span className="text-sm text-muted-fg">Pesan terlama otomatis dilewati agar tidak melebihi batas konteks model. Turunkan bila memakai model kecil.</span>
         </label>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="font-semibold">Pembaca gambar</h2>
+        <p className="text-sm text-muted-fg">
+          Pilih model yang bisa melihat gambar. Setiap gambar yang kamu lampirkan akan dibaca model ini, lalu jawabannya tetap ditulis model yang kamu pilih di chat.
+          Bila kosong, gambar dikirim langsung ke model terpilih.
+        </p>
+        <select
+          className="field"
+          value={p.visionModel ? `${p.visionModel.providerId}|${p.visionModel.modelId}` : ""}
+          onChange={(e) => {
+            const [providerId, ...rest] = e.target.value.split("|");
+            set("visionModel", e.target.value ? { providerId, modelId: rest.join("|") } : null);
+          }}
+        >
+          <option value="">Tidak ada (kirim langsung)</option>
+          {models.map((m) => (
+            <option key={m.id} value={`${m.providerId}|${m.modelId}`}>
+              {m.providerName} — {m.label}
+            </option>
+          ))}
+        </select>
       </section>
 
       <section className="flex flex-col gap-3">

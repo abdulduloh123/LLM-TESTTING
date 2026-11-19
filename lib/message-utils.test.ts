@@ -71,3 +71,29 @@ test("ensureIds mengganti id kosong dan duplikat, mempertahankan yang valid", ()
   );
   assert.equal(out[0], list[0]); // tidak diubah => objek sama
 });
+
+import { withImageDescriptions } from "./message-utils";
+
+test("withImageDescriptions mengganti gambar dengan deskripsi", () => {
+  const list = [
+    {
+      id: "1",
+      role: "user",
+      parts: [
+        { type: "file", mediaType: "image/jpeg", url: "data:image/jpeg;base64,AA" },
+        { type: "text", text: "apa ini?" },
+      ],
+      metadata: { imageDescription: "Seekor kucing." },
+    },
+  ] as UIMessage[];
+  const out = withImageDescriptions(list, true);
+  assert.deepEqual(out[0].parts.map((p) => p.type), ["text", "text"]);
+  assert.match((out[0].parts[0] as { text: string }).text, /Seekor kucing/);
+  assert.equal(withImageDescriptions(list, false), list);
+});
+
+test("packParts menyimpan imageDescription pada pesan pengguna", () => {
+  const m = { id: "1", role: "user", parts: [{ type: "text", text: "x" }], metadata: { imageDescription: "d" } } as UIMessage;
+  const u = unpack(packParts(m), null);
+  assert.equal(u.metadata.imageDescription, "d");
+});

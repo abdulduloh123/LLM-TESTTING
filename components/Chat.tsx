@@ -18,7 +18,10 @@ type PrefsLite = {
   personas: PersonaOpt[];
   activePersonaId: string | null;
   visionModel: { providerId: string; modelId: string } | null;
+  imageModel: { providerId: string; modelId: string } | null;
 };
+
+const RATIOS = ["auto", "1:1", "3:4", "4:3", "2:3", "3:2", "9:16", "16:9"];
 
 // Klien hanya mengirim pesan terbaru + id riwayat; server membaca sisanya dari database.
 const transport = new DefaultChatTransport({
@@ -52,9 +55,11 @@ export default function Chat() {
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const [showDown, setShowDown] = useState(false);
   const [ready, setReady] = useState(false);
-  const [prefs, setPrefs] = useState<PrefsLite>({ theme: "system", personas: [], activePersonaId: null, visionModel: null });
+  const [prefs, setPrefs] = useState<PrefsLite>({ theme: "system", personas: [], activePersonaId: null, visionModel: null, imageModel: null });
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachNote, setAttachNote] = useState("");
+  // Mode pembuat gambar: "new" = gambar baru, "edit" = ubah gambar buatan terakhir (atau lampiran)
+  const [img, setImg] = useState<{ on: boolean; mode: "new" | "edit"; ratio: string; count: number }>({ on: false, mode: "new", ratio: "auto", count: 1 });
 
   const convRef = useRef<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -116,7 +121,7 @@ export default function Chat() {
     (async () => {
       const [list, p] = await Promise.all([api<Model[]>("/api/models"), api<PrefsLite>("/api/settings").catch(() => null)]);
       if (p && Array.isArray(p.personas)) {
-        setPrefs({ theme: p.theme, personas: p.personas, activePersonaId: p.activePersonaId, visionModel: p.visionModel ?? null });
+        setPrefs({ theme: p.theme, personas: p.personas, activePersonaId: p.activePersonaId, visionModel: p.visionModel ?? null, imageModel: p.imageModel ?? null });
         applyTheme(p.theme);
       }
       if (Array.isArray(list)) {
@@ -192,7 +197,15 @@ export default function Chat() {
     setShowDown(!near);
   }
 
-  const reqBody = () => ({ id: convRef.current, providerId: sel?.providerId, modelId: sel?.modelId });
+  const reqBody = (forceImage = false) => ({
+    id: convRef.current,
+    providerId: sel?.providerId,
+    modelId: sel?.modelId,
+    image:
+      img.on || forceImage
+        ? { mode: img.mode, aspectRatio: img.ratio === "auto" ? undefined : img.ratio, count: img.count }
+        : undefined,
+  });
 
   async function send(text: string, files: Attachment[] = []) {
     const t = text.trim();
@@ -218,7 +231,13 @@ export default function Chat() {
       else parts.push({ type: "file", mediaType: a.mediaType, url: a.url, filename: a.name });
     }
     if (t) parts.push({ type: "text", text: t });
+    if (img.on && !prefs.imageModel) {
+      setAttachNote("Atur model pembuat gambar di Pengaturan dulu.");
+      return;
+    }
     await sendMessage({ role: "user", parts }, { body: reqBody() });
+    // setelah gambar jadi, pesan berikutnya wajarnya mengedit gambar itu
+    if (img.on) setImg((o) => ({ ...o, mode: "edit" }));
   }
 
   async function addFiles(list: FileList | null) {
@@ -255,7 +274,9 @@ export default function Chat() {
 
   const onRegenerate = () => {
     if (!sel) return setSheet(true);
-    regenerate({ body: reqBody() });
+    // balasan yang berisi gambar buatan diulang lewat model gambar juga
+    const wasImage = !!lastAssistant?.parts.some((p) => p.type === "file");
+    regenerate({ body: reqBody(wasImage) });
   };
 
   async function setPersona(id: string | null) {
@@ -319,7 +340,7 @@ export default function Chat() {
             />
           ))}
 
-          {status === "submitted" && <p className="text-muted-fg">Berpikir…</p>}
+          {status === "submitted" && <p className="text-muted-fg">{img.on ? "Membuat gambar… (bisa sampai satu menit)" : "Berpikir…"}</p>}
 
           {error && (
             <div role="alert" className="rounded-xl border border-red-500/40 bg-red-500/10 p-3">
@@ -405,6 +426,34 @@ export default function Chat() {
               )}
             </div>
           )}
+          {img.on && (
+            <div className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-muted p-2 text-sm">
+              <span aria-hidden>🎨</span>
+              <select className="field w-auto" aria-label="Mode gambar" value={img.mode} onChange={(e) => setImg({ ...img, mode: e.target.value as "new" | "edit" })}>
+                <option value="new">Gambar baru</option>
+                <option value="edit">Edit gambar terakhir</option>
+              </select>
+              <select className="field w-auto" aria-label="Rasio" value={img.ratio} onChange={(e) => setImg({ ...img, ratio: e.target.value })}>
+                {RATIOS.map((r) => (
+                  <option key={r} value={r}>
+                    {r === "auto" ? "Rasio otomatis" : r}
+                  </option>
+                ))}
+              </select>
+              <select className="field w-auto" aria-label="Jumlah variasi" value={img.count} onChange={(e) => setImg({ ...img, count: Number(e.target.value) })}>
+                {[1, 2, 3, 4].map((n) => (
+                  <option key={n} value={n}>
+                    {n} variasi
+                  </option>
+                ))}
+              </select>
+              {!prefs.imageModel && (
+                <Link href="/settings" className="underline">
+                  Atur model gambar
+                </Link>
+              )}
+            </div>
+          )}
           <div className="flex items-end gap-2">
             <input
               ref={fileInput}
@@ -417,10 +466,20 @@ export default function Chat() {
             <button type="button" className="btn border-0 bg-transparent" aria-label="Lampirkan berkas" disabled={busy} onClick={() => fileInput.current?.click()}>
               📎
             </button>
+            <button
+              type="button"
+              className={`btn ${img.on ? "btn-primary" : "border-0 bg-transparent"}`}
+              aria-label="Mode buat/edit gambar"
+              aria-pressed={img.on}
+              disabled={busy}
+              onClick={() => setImg({ ...img, on: !img.on })}
+            >
+              🎨
+            </button>
             <textarea
               className="field max-h-40 min-h-11 flex-1 resize-none"
               rows={1}
-              placeholder="Tulis pesan…"
+              placeholder={img.on ? "Deskripsikan gambar yang diinginkan…" : "Tulis pesan…"}
               value={input}
               onChange={(e) => {
                 setInput(e.target.value);

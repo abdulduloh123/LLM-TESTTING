@@ -5,7 +5,7 @@ import type { UIMessage } from "ai";
 import Markdown from "../Markdown";
 import { ATTACH_MARK } from "./attachments";
 
-type Meta = { model?: string | null; usage?: { in?: number; out?: number } };
+type Meta = { model?: string | null; usage?: { in?: number; out?: number }; imageDescription?: string };
 
 export function textOf(m: UIMessage) {
   return m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
@@ -76,6 +76,12 @@ function MessageViewImpl({ m, isLast, busy, editing, setEditing, submitEdit, onR
             </div>
           );
         })}
+        {meta?.imageDescription && (
+          <details className="max-w-[88%] rounded-xl border border-border px-3 py-2 text-sm text-muted-fg">
+            <summary className="cursor-pointer">Hasil baca gambar</summary>
+            <p className="mt-2 whitespace-pre-wrap break-words">{meta.imageDescription}</p>
+          </details>
+        )}
         {!busy && !hasImages && (
           <button className="min-h-9 px-2 text-sm text-muted-fg" onClick={() => setEditing({ id: m.id, text })}>
             Edit

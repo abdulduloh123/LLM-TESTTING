@@ -16,7 +16,8 @@ import { friendlyError, makeModel, type Kind } from "@/lib/providers";
 import { loadPrefs } from "@/lib/prefs";
 import { activeSystem } from "@/lib/prefs-schema";
 import { loadMessages, saveMessages } from "@/lib/messages";
-import { forModel, sanitizeUserParts, textOf, type MsgMeta } from "@/lib/message-utils";
+import { forModel, isImagePart, sanitizeUserParts, textOf, withImageDescriptions, type MsgMeta } from "@/lib/message-utils";
+import { describeImages } from "@/lib/vision";
 import { trimToBudget } from "@/lib/context";
 
 export const maxDuration = 300;
@@ -73,16 +74,26 @@ export async function POST(req: Request) {
   // Susun riwayat lengkap.
   let incoming: UIMessage[];
   if (message) {
-    // Riwayat = N pesan pertama di database (urut posisi). Tidak bergantung pada id dari klien,
-    // sehingga id yang berbeda antara klien dan server tidak lagi membuat riwayat "tidak sinkron".
-    const n = historyCount ?? history?.length ?? 0;
-    if (stored.length < n)
-      return Response.json({ error: "Riwayat tidak sinkron. Buka ulang percakapan lalu coba lagi." }, { status: 409 });
-    const prior = stored.slice(0, n);
+    // Riwayat dicocokkan lewat id. Id yang tidak ada di database (mis. placeholder balasan yang gagal/kosong
+    // di klien) dilewati begitu saja, bukan dianggap galat. Klien lama hanya mengirim jumlah (historyCount).
     const byId = new Map(stored.map((m) => [m.id, m]));
+    let prior: UIMessage[];
+    if (history) prior = history.map((hid) => byId.get(hid)).filter((m): m is UIMessage => !!m);
+    else {
+      const n = historyCount ?? 0;
+      if (stored.length < n)
+        return Response.json({ error: "Riwayat tidak sinkron. Buka ulang percakapan lalu coba lagi." }, { status: 409 });
+      prior = stored.slice(0, n);
+    }
     const last: UIMessage =
       message.role === "user"
-        ? { id: message.id, role: "user", parts: sanitizeUserParts(message.parts) }
+        ? {
+            id: message.id,
+            role: "user",
+            parts: sanitizeUserParts(message.parts),
+            // pertahankan deskripsi gambar yang sudah tersimpan (mis. saat "Ulangi")
+            ...(byId.get(message.id)?.metadata ? { metadata: byId.get(message.id)!.metadata } : {}),
+          }
         : (byId.get(message.id) ?? { id: message.id, role: "assistant", parts: [] });
     incoming = [...prior, last];
   } else {
@@ -93,6 +104,13 @@ export async function POST(req: Request) {
   const first = incoming.find((m) => m.role === "user");
   if (!incoming.length || incoming[incoming.length - 1].parts.length === 0)
     return Response.json({ error: "Pesan kosong" }, { status: 400 });
+
+  // Pembaca gambar: bila model penglihatan diatur (dan berbeda dari model jawaban), gambar dibaca olehnya
+  // dan model yang dipilih menjawab berdasarkan deskripsinya.
+  const vision = prefs.visionModel;
+  const useVision = !!vision && !(vision.providerId === providerId && vision.modelId === modelId);
+  let visionError: string | null = null;
+  const hasImages = incoming.some((m) => m.role === "user" && m.parts.some(isImagePart));
 
   // Simpan pesan pengguna lebih dulu agar tidak hilang bila streaming gagal.
   const provisionalTitle = first ? textOf(first).trim().slice(0, 60) || DEFAULT_TITLE : DEFAULT_TITLE;
@@ -107,8 +125,26 @@ export async function POST(req: Request) {
 
   const model = makeModel({ kind: p.kind as Kind, name: p.name, baseUrl: p.baseUrl, apiKey: decrypt(p.keyEnc) }, modelId);
 
+  let sendList = incoming;
+  let visionActive = false;
+  if (useVision && vision && hasImages) {
+    const [vp] = await db().select().from(providers).where(eq(providers.id, vision.providerId));
+    if (vp) {
+      visionActive = true;
+      try {
+        const visionModel = makeModel({ kind: vp.kind as Kind, name: vp.name, baseUrl: vp.baseUrl, apiKey: decrypt(vp.keyEnc) }, vision.modelId);
+        incoming = await describeImages(incoming, visionModel, req.signal);
+      } catch (e) {
+        visionError = friendlyError(e);
+      }
+    }
+  }
+  if (visionError)
+    return Response.json({ error: `Model pembaca gambar gagal: ${visionError} Periksa model pembaca gambar di Pengaturan.` }, { status: 502 });
+  sendList = withImageDescriptions(incoming, visionActive);
+
   // Pangkas riwayat lama agar tidak melewati batas konteks.
-  const { messages: forSend } = trimToBudget(forModel(incoming), prefs.contextTokens);
+  const { messages: forSend } = trimToBudget(forModel(sendList), prefs.contextTokens);
 
   const result = streamText({
     model,

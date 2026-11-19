@@ -4,7 +4,12 @@ import type { UIMessage } from "ai";
 export const META_TYPE = "data-meta";
 
 export type Usage = { in?: number; out?: number };
-export type MsgMeta = { model?: string | null; usage?: Usage };
+export type MsgMeta = {
+  model?: string | null;
+  usage?: Usage;
+  /** Deskripsi gambar hasil model penglihatan (pada pesan pengguna yang berisi gambar). */
+  imageDescription?: string;
+};
 
 export const LIMITS = {
   maxImages: 4,
@@ -55,24 +60,44 @@ export function sanitizeUserParts(parts: unknown): UIMessage["parts"] {
   return out as UIMessage["parts"];
 }
 
-/** Susun `parts` untuk disimpan: bagian pesan + satu bagian meta (bila ada token). */
+/** Susun `parts` untuk disimpan: bagian pesan + satu bagian meta (token / deskripsi gambar) bila ada. */
 export function packParts(m: UIMessage): unknown[] {
   const parts = m.parts.filter((p) => p.type !== META_TYPE);
   const meta = m.metadata as MsgMeta | undefined;
-  if (m.role === "assistant" && meta?.usage && (meta.usage.in !== undefined || meta.usage.out !== undefined)) {
-    return [...parts, { type: META_TYPE, data: { usage: meta.usage } }];
-  }
-  return parts;
+  const data: { usage?: Usage; imageDescription?: string } = {};
+  if (m.role === "assistant" && meta?.usage && (meta.usage.in !== undefined || meta.usage.out !== undefined)) data.usage = meta.usage;
+  if (m.role === "user" && meta?.imageDescription) data.imageDescription = meta.imageDescription;
+  return Object.keys(data).length ? [...parts, { type: META_TYPE, data }] : parts;
 }
 
 /** Kebalikan packParts: pisahkan bagian meta menjadi `metadata`. */
 export function unpack(parts: unknown, model: string | null): { parts: UIMessage["parts"]; metadata: MsgMeta } {
   const all = (Array.isArray(parts) ? parts : []) as AnyPart[];
-  const meta = all.find((p) => p.type === META_TYPE) as { data?: { usage?: Usage } } | undefined;
+  const meta = all.find((p) => p.type === META_TYPE) as { data?: { usage?: Usage; imageDescription?: string } } | undefined;
   return {
     parts: all.filter((p) => p.type !== META_TYPE) as UIMessage["parts"],
-    metadata: { model, ...(meta?.data?.usage ? { usage: meta.data.usage } : {}) },
+    metadata: {
+      model,
+      ...(meta?.data?.usage ? { usage: meta.data.usage } : {}),
+      ...(meta?.data?.imageDescription ? { imageDescription: meta.data.imageDescription } : {}),
+    },
   };
+}
+
+export const isImagePart = (p: { type: string }) => p.type === "file";
+
+/**
+ * Bila model penglihatan aktif, gambar di pesan pengguna diganti dengan deskripsinya (teks)
+ * agar model jawaban (yang mungkin tidak bisa melihat gambar) tidak menerima data gambar.
+ */
+export function withImageDescriptions(list: UIMessage[], active: boolean): UIMessage[] {
+  if (!active) return list;
+  return list.map((m) => {
+    if (m.role !== "user" || !m.parts.some(isImagePart)) return m;
+    const desc = (m.metadata as MsgMeta | undefined)?.imageDescription;
+    const note = desc ? `[Lampiran gambar — dibaca oleh model penglihatan]\n${desc}` : "[Lampiran gambar lama tidak disertakan]";
+    return { ...m, parts: [{ type: "text", text: note } as UIMessage["parts"][number], ...m.parts.filter((p) => !isImagePart(p))] };
+  });
 }
 
 /**

@@ -13,13 +13,18 @@ import { ModelSheet, type Model, type PersonaOpt, type Sel } from "./chat/Sheets
 const LAST_KEY = "llm-pribadi:last-model";
 const THEME_KEY = "llm-pribadi:theme";
 
-type PrefsLite = { theme: "system" | "light" | "dark"; personas: PersonaOpt[]; activePersonaId: string | null };
+type PrefsLite = {
+  theme: "system" | "light" | "dark";
+  personas: PersonaOpt[];
+  activePersonaId: string | null;
+  visionModel: { providerId: string; modelId: string } | null;
+};
 
 // Klien hanya mengirim pesan terbaru + id riwayat; server membaca sisanya dari database.
 const transport = new DefaultChatTransport({
   api: "/api/chat",
   prepareSendMessagesRequest: ({ messages, body }) => ({
-    body: { ...body, historyCount: messages.length - 1, message: messages[messages.length - 1] },
+    body: { ...body, history: messages.slice(0, -1).map((m) => m.id), message: messages[messages.length - 1] },
   }),
 });
 
@@ -47,7 +52,7 @@ export default function Chat() {
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const [showDown, setShowDown] = useState(false);
   const [ready, setReady] = useState(false);
-  const [prefs, setPrefs] = useState<PrefsLite>({ theme: "system", personas: [], activePersonaId: null });
+  const [prefs, setPrefs] = useState<PrefsLite>({ theme: "system", personas: [], activePersonaId: null, visionModel: null });
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachNote, setAttachNote] = useState("");
 
@@ -111,7 +116,7 @@ export default function Chat() {
     (async () => {
       const [list, p] = await Promise.all([api<Model[]>("/api/models"), api<PrefsLite>("/api/settings").catch(() => null)]);
       if (p && Array.isArray(p.personas)) {
-        setPrefs({ theme: p.theme, personas: p.personas, activePersonaId: p.activePersonaId });
+        setPrefs({ theme: p.theme, personas: p.personas, activePersonaId: p.activePersonaId, visionModel: p.visionModel ?? null });
         applyTheme(p.theme);
       }
       if (Array.isArray(list)) {
@@ -391,6 +396,13 @@ export default function Chat() {
                 </span>
               ))}
               {attachNote && <span className="text-sm text-red-500">{attachNote}</span>}
+              {attachments.some((a) => a.kind === "image") && (
+                <span className="text-sm text-muted-fg">
+                  {prefs.visionModel
+                    ? "Gambar akan dibaca model pembaca gambar, jawaban tetap dari model terpilih."
+                    : "Belum ada model pembaca gambar: gambar dikirim langsung ke model terpilih (harus mendukung gambar). Atur di Pengaturan."}
+                </span>
+              )}
             </div>
           )}
           <div className="flex items-end gap-2">

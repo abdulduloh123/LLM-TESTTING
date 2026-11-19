@@ -6,6 +6,8 @@ export const personaSchema = z.object({
   system: z.string().max(20000),
 });
 
+export const visionModelSchema = z.object({ providerId: z.string().uuid(), modelId: z.string().min(1).max(200) });
+
 const shape = {
   theme: z.enum(["system", "light", "dark"]),
   personas: z.array(personaSchema).max(30),
@@ -18,6 +20,8 @@ const shape = {
   contextTokens: z.number().int().min(1000).max(2_000_000),
   /** Buat judul percakapan otomatis dengan model setelah balasan pertama. */
   autoTitle: z.boolean(),
+  /** Model yang bertugas "membaca" gambar. null = gambar dikirim langsung ke model yang dipilih. */
+  visionModel: visionModelSchema.nullable(),
 };
 
 export const prefsSchema = z.object(shape);
@@ -34,6 +38,7 @@ export const DEFAULT_PREFS: Prefs = {
   maxTokens: null,
   contextTokens: 100_000,
   autoTitle: true,
+  visionModel: null,
 };
 
 /** Pastikan persona aktif memang ada. */

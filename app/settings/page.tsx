@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import type { Persona, Prefs } from "@/lib/prefs-schema";
+import { DEFAULT_BASE_SYSTEM, type Persona, type Prefs } from "@/lib/prefs-schema";
 
 type ModelOpt = { id: string; providerId: string; providerName: string; modelId: string; label: string };
 
@@ -106,10 +106,25 @@ export default function SettingsPage() {
       <section className="flex flex-col gap-3">
         <h2 className="font-semibold">Persona (system prompt)</h2>
         <p className="text-sm text-muted-fg">Instruksi yang dikirim di awal setiap percakapan. Persona aktif juga bisa diganti dari menu pilih model.</p>
-        <label className="flex items-center gap-2">
-          <input type="radio" name="persona" checked={p.activePersonaId === null} onChange={() => set("activePersonaId", null)} />
-          Tanpa persona
-        </label>
+        <div className="flex flex-col gap-2 rounded-xl border border-border p-3">
+          <label className="flex items-center gap-2">
+            <input type="radio" name="persona" checked={p.activePersonaId === null} onChange={() => set("activePersonaId", null)} />
+            Prompt dasar (bawaan)
+          </label>
+          <textarea
+            className="field min-h-36"
+            maxLength={20000}
+            placeholder="Kosongkan bila tidak ingin memakai system prompt."
+            value={p.baseSystem}
+            onChange={(e) => set("baseSystem", e.target.value)}
+          />
+          <p className="text-sm text-muted-fg">
+            Dipakai saat tidak ada persona aktif. Dikirim di setiap pesan, jadi semakin pendek semakin hemat token (≈{Math.ceil(p.baseSystem.length / 3)} token).
+          </p>
+          <button className="btn self-start" onClick={() => set("baseSystem", DEFAULT_BASE_SYSTEM)}>
+            Kembalikan ke bawaan
+          </button>
+        </div>
         {p.personas.map((x) => (
           <div key={x.id} className="flex flex-col gap-2 rounded-xl border border-border p-3">
             <div className="flex items-center gap-2">
@@ -172,7 +187,7 @@ export default function SettingsPage() {
             value={p.contextTokens}
             onChange={(e) => set("contextTokens", Math.max(1000, Math.min(2_000_000, Math.round(Number(e.target.value) || 1000))))}
           />
-          <span className="text-sm text-muted-fg">Pesan terlama otomatis dilewati agar tidak melebihi batas konteks model. Turunkan bila memakai model kecil.</span>
+          <span className="text-sm text-muted-fg">Bila terlampaui, pesan terlama dipotong sampai ±70% batas (supaya awal riwayat stabil dan cache provider tetap terpakai). Makin kecil makin hemat token; naikkan bila butuh ingatan chat yang panjang.</span>
         </label>
       </section>
 

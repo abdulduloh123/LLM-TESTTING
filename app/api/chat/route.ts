@@ -16,7 +16,7 @@ import { friendlyError, makeModel, type Kind } from "@/lib/providers";
 import { loadPrefs } from "@/lib/prefs";
 import { activeSystem } from "@/lib/prefs-schema";
 import { loadMessages, saveMessages } from "@/lib/messages";
-import { forModel, isImagePart, sanitizeUserParts, textOf, withImageDescriptions, type MsgMeta } from "@/lib/message-utils";
+import { forModel, isImagePart, sanitizeUserParts, textOf, withImageDescriptions, limitOldImages, type MsgMeta } from "@/lib/message-utils";
 import { describeImages } from "@/lib/vision";
 import { generateImages, ImageGenError, parseDataUrl, type Img } from "@/lib/imagegen";
 import { trimToBudget } from "@/lib/context";
@@ -73,7 +73,7 @@ async function makeTitle(model: ReturnType<typeof makeModel>, user: string, assi
       model,
       instructions:
         "Buat judul percakapan yang sangat singkat (maksimal 6 kata) dalam bahasa yang dipakai pengguna. Balas hanya judulnya, tanpa tanda kutip atau titik.",
-      prompt: `Pengguna: ${user.slice(0, 600)}\n\nAsisten: ${assistant.slice(0, 600)}`,
+      prompt: `Pengguna: ${user.slice(0, 300)}\n\nAsisten: ${assistant.slice(0, 200)}`,
       maxOutputTokens: 200,
       abortSignal: AbortSignal.timeout(20_000),
     });
@@ -208,7 +208,7 @@ export async function POST(req: Request) {
   }
   if (visionError)
     return Response.json({ error: `Model pembaca gambar gagal: ${visionError} Periksa model pembaca gambar di Pengaturan.` }, { status: 502 });
-  sendList = withImageDescriptions(incoming, visionActive || !!imageReq);
+  sendList = limitOldImages(withImageDescriptions(incoming, visionActive || !!imageReq));
 
   // Pangkas riwayat lama agar tidak melewati batas konteks.
   const { messages: forSend } = trimToBudget(forModel(sendList), prefs.contextTokens);

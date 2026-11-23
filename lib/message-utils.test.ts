@@ -120,3 +120,16 @@ test("packParts menyimpan imagePrompt/imageModel pada balasan asisten", () => {
   assert.equal(u.metadata.imagePrompt, "p");
   assert.equal(u.metadata.imageModel, "gemini-x");
 });
+
+import { limitOldImages } from "./message-utils";
+
+test("limitOldImages: hanya gambar terakhir yang dekat yang dipertahankan", () => {
+  const img = (id: string) =>
+    ({ id, role: "user", parts: [{ type: "file", mediaType: "image/jpeg", url: "data:image/jpeg;base64,AA" }, { type: "text", text: "t" }] }) as UIMessage;
+  const txt = (id: string, role: "user" | "assistant") => ({ id, role, parts: [{ type: "text", text: "x" }] }) as UIMessage;
+  const out = limitOldImages([img("a"), txt("b", "assistant"), img("c"), txt("d", "assistant"), txt("e", "user")]);
+  assert.equal(out[0].parts.some((p) => p.type === "file"), false);
+  assert.equal(out[2].parts.some((p) => p.type === "file"), true);
+  const far = limitOldImages([img("a"), ...Array.from({ length: 8 }, (_, i) => txt(`m${i}`, i % 2 ? "user" : "assistant"))]);
+  assert.equal(far[0].parts.some((p) => p.type === "file"), false);
+});

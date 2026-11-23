@@ -99,6 +99,28 @@ export function unpack(parts: unknown, model: string | null): { parts: UIMessage
 export const isImagePart = (p: { type: string }) => p.type === "file";
 
 /**
+ * Hemat token: gambar mentah hanya dikirim ulang untuk pesan bergambar TERAKHIR bila masih dekat (≤ 6 pesan terakhir).
+ * Gambar yang lebih lama diganti catatan teks.
+ */
+export function limitOldImages(list: UIMessage[], window = 6): UIMessage[] {
+  let keep = -1;
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i].role === "user" && list[i].parts.some(isImagePart)) {
+      keep = i;
+      break;
+    }
+  }
+  return list.map((m, i) => {
+    if (m.role !== "user" || !m.parts.some(isImagePart)) return m;
+    if (i === keep && i >= list.length - window) return m;
+    return {
+      ...m,
+      parts: [{ type: "text", text: "[Gambar sebelumnya tidak disertakan ulang]" } as UIMessage["parts"][number], ...m.parts.filter((p) => !isImagePart(p))],
+    };
+  });
+}
+
+/**
  * Bila model penglihatan aktif, gambar di pesan pengguna diganti dengan deskripsinya (teks)
  * agar model jawaban (yang mungkin tidak bisa melihat gambar) tidak menerima data gambar.
  */

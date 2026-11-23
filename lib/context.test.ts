@@ -33,3 +33,18 @@ test("estimateTokens konservatif", () => {
   assert.equal(estimateTokens("abc"), 1);
   assert.equal(estimateTokens("abcd"), 2);
 });
+
+test("pemangkasan memotong sampai ~70% budget agar awal riwayat stabil", () => {
+  const m = (role: "user" | "assistant") => msg(role, "x".repeat(300)); // ~100 token
+  const list = Array.from({ length: 20 }, (_, i) => m(i % 2 === 0 ? "user" : "assistant"));
+  const budget = 1500; // total ~2000+ > budget
+  const r = trimToBudget(list, budget);
+  const kept = r.messages.length * 104;
+  assert.ok(r.dropped > 0);
+  assert.ok(kept <= budget * 0.7 + 104, `sisa ${kept} terlalu besar`);
+});
+
+test("tidak memangkas selama masih di bawah budget walau mendekati", () => {
+  const list = Array.from({ length: 10 }, (_, i) => msg(i % 2 === 0 ? "user" : "assistant", "x".repeat(300)));
+  assert.equal(trimToBudget(list, 1100).dropped, 0);
+});

@@ -22,7 +22,8 @@ test("persona aktif yang sudah tidak ada dinolkan", () => {
 test("activeSystem mengembalikan prompt persona aktif", () => {
   const p = parsePrefs(JSON.stringify({ personas: [{ id: "a", name: "A", system: " Jawab singkat. " }], activePersonaId: "a" }));
   assert.equal(activeSystem(p), "Jawab singkat.");
-  assert.equal(activeSystem(DEFAULT_PREFS), undefined);
+  assert.equal(activeSystem(DEFAULT_PREFS), DEFAULT_PREFS.baseSystem.trim());
+  assert.equal(activeSystem({ ...DEFAULT_PREFS, baseSystem: "  " }), undefined);
 });
 
 test("patch schema menolak nilai di luar rentang", () => {

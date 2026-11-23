@@ -289,6 +289,14 @@ export default function Chat() {
   const persona = prefs.personas.find((p) => p.id === prefs.activePersonaId);
   const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
   const errMsg = error ? errorText(error.message) : "";
+  const totals = messages.reduce(
+    (t, m) => {
+      const u = (m.metadata as { usage?: { in?: number; out?: number } } | undefined)?.usage;
+      return { in: t.in + (u?.in ?? 0), out: t.out + (u?.out ?? 0) };
+    },
+    { in: 0, out: 0 },
+  );
+  const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}rb` : String(n));
 
   return (
     <div className="flex h-dvh flex-col">
@@ -395,6 +403,11 @@ export default function Chat() {
         }}
       >
         <div className="mx-auto max-w-3xl">
+          {(totals.in > 0 || totals.out > 0) && (
+            <p className="mb-1 text-xs text-muted-fg" title="Total token yang terpakai di percakapan ini (masuk / keluar)">
+              Token chat ini: ↑{fmt(totals.in)} ↓{fmt(totals.out)}
+            </p>
+          )}
           {(attachments.length > 0 || attachNote) && (
             <div className="mb-2 flex flex-wrap items-center gap-2">
               {attachments.map((a) => (
